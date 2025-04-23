@@ -1,0 +1,1409 @@
+Imports Assy_Ticketing_System.frm_Defect_Entry
+Public Class frm_Defect_Entry
+	Private result_serialNos As DataTable
+	Private isCheck As Boolean = False
+	Private DefectType As String = String.Empty
+	Private DefectTypeDesc As String = String.Empty
+	Private boolHold As Boolean = False
+	Private DefectItemID As String = ""
+	Sub New()
+		InitializeComponent()
+
+		txtserialNo.Clear()
+
+		lblproductNo.Text = String.Empty
+		lblsettsuNo.Text = String.Empty
+		lbllotNo.Text = String.Empty
+
+		cboprocess.Text = Nothing
+
+		lbllineNo.Text = String.Empty
+		lblticketLineNo.Text = String.Empty
+		For Each cb In gDefect.Controls
+			If Mid(cb.Name, 1, 2) = "cb" Then cb.Checked = False
+		Next
+
+		rbrepairMH2.Checked = False
+		rbrepairMH3.Checked = False
+		rbrepairMH1.Checked = False
+
+		rbrecrimpingYes.Checked = False
+		rbrecrimpingNo.Checked = False
+
+		rbsonoSolderYES.Checked = False
+		rbsonoSolderNO.Checked = False
+
+		txtdefectCommittedIdNumber.Clear()
+		txtotherContributor.Clear()
+		txtdefectNoticedIdNumber.Clear()
+
+		result_serialNos = New DataTable("result")
+		With result_serialNos
+			.Columns.Add("Serial No.")
+			.Columns.Add("Product No.")
+			.Columns.Add("Settsu No.")
+			.Columns.Add("Lot No.")
+			.Columns.Add("Lot Size")
+			.Columns.Add("Product Line No")
+			.Columns.Add("Ticket Line No")
+		End With
+	End Sub
+	Private Sub frm_Defect_Entry_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+		Call populateEes()
+		MotherDefect()
+
+		cmbDefType.Enabled = True
+	End Sub
+	Private Sub populateEes()
+		If var_shiftNo = 1 Then
+			rbShift1.Checked = True
+		ElseIf var_shiftNo = 2 Then
+			rbShift2.Checked = True
+		Else
+			rbShift1.Checked = False
+			rbShift2.Checked = False
+		End If
+		viewtmsRecord.Items.Clear()
+		Dim employee = New class_tms_line(var_lineNo1, var_lineNo2, var_lineNo3, var_lineNo4, var_shiftNo)
+		For i = 0 To employee.employees.Rows.Count - 1
+			Dim li = viewtmsRecord.Items.Add(employee.employees.Rows(i)("ID Number").ToString.Trim)
+			li.SubItems.Add(employee.employees.Rows(i)("Employee Name").ToString.Trim)
+		Next
+		cbqa.Checked = False
+	End Sub
+	Public Class DefectItem
+		Public Property M_ID As Integer
+		Public Property M_Defect As String
+
+		Public Overrides Function ToString() As String
+			Return M_Defect
+		End Function
+	End Class
+	Private Sub MotherDefect()
+		Dim motherDefect = SelectQuery("SELECT [M_ID], [M_Defect] FROM [PCSDB].[dbo].[tbl_mother_defect_mst] WITH (NOLOCK)", dbTicketing)
+		cmbMotherDef.Items.Clear()
+
+		For Each row As DataRow In motherDefect.Rows
+			Dim item As New DefectItem()
+			item.M_ID = Convert.ToInt32(row("M_ID"))
+			item.M_Defect = row("M_Defect").ToString()
+			cmbMotherDef.Items.Add(item)
+		Next
+	End Sub
+
+
+	Private Sub LoadDefectItems(m_ID As Integer)
+		dtgDefectItems.AllowUserToAddRows = False
+
+		Dim defectItems = SelectQuery($"SELECT [Item_ID], [M_ID], [Item_No], [Defect_Item] FROM [PCSDB].[dbo].[tbl_defect_item_mst] WITH (NOLOCK) WHERE [M_ID] = '{m_ID}'", dbTicketing)
+		dtgDefectItems.Rows.Clear()
+		If dtgDefectItems.Columns.Count = 0 Then
+			Dim chkColumn As New DataGridViewCheckBoxColumn()
+			chkColumn.Name = "Select"
+			chkColumn.HeaderText = "Select"
+			chkColumn.Width = 50 ' Optional: Set the width of the checkbox column
+			dtgDefectItems.Columns.Insert(0, chkColumn) ' Insert the checkbox column at the first position
+			dtgDefectItems.Columns.Add("Item_ID", "Item_ID")
+			dtgDefectItems.Columns.Add("M_ID", "M_ID")
+			dtgDefectItems.Columns.Add("Item_No", "Item_No")
+			dtgDefectItems.Columns.Add("Defect_Item", "Defect_Item")
+		End If
+		dtgDefectItems.Columns("Item_ID").Visible = False
+		dtgDefectItems.Columns("M_ID").Visible = False
+		dtgDefectItems.Columns("Defect_Item").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+		dtgDefectItems.Columns("Item_No").ReadOnly = True
+		dtgDefectItems.Columns("Defect_Item").ReadOnly = True
+
+		For Each row As DataRow In defectItems.Rows
+			dtgDefectItems.Rows.Add(False, row("Item_ID").ToString(), row("M_ID").ToString(), row("Item_No").ToString(), row("Defect_Item").ToString())
+		Next
+	End Sub
+	Private Sub cmbMotherDef_SelectedIndexChanged(sender As Object, e As EventArgs) Handles cmbMotherDef.SelectedIndexChanged
+		If cmbMotherDef.SelectedItem IsNot Nothing Then
+			Dim selectedItem As DefectItem = CType(cmbMotherDef.SelectedItem, DefectItem)
+			Dim selectedM_ID As Integer = selectedItem.M_ID
+			LoadDefectItems(selectedM_ID)
+			LblSelectedDefect.Text = "-"
+		End If
+	End Sub
+	Private Sub dtgDefectItems_CellClick(sender As Object, e As DataGridViewCellEventArgs) Handles dtgDefectItems.CellClick
+		If e.RowIndex >= 0 Then ' Ensure the clicked cell is not a header cell
+			If e.ColumnIndex >= 0 Then
+				If e.ColumnIndex >= 0 Then
+					For Each row As DataGridViewRow In dtgDefectItems.Rows
+						row.Cells(0).Value = False
+					Next
+					If dtgDefectItems.Rows(e.RowIndex).Cells(0).Value <> Nothing And dtgDefectItems.Rows(e.RowIndex).Cells(0).Value = True Then
+						dtgDefectItems.Rows(e.RowIndex).Cells(0).Value = False
+					Else
+						dtgDefectItems.Rows(e.RowIndex).Cells(0).Value = True
+					End If
+					LblSelectedDefect.Text = dtgDefectItems.Rows(e.RowIndex).Cells("Defect_Item").Value.ToString()
+					DefectItemID = dtgDefectItems.Rows(e.RowIndex).Cells("Item_ID").Value.ToString()
+				Else
+					LblSelectedDefect.Text = "-"
+				End If
+			End If
+		End If
+	End Sub
+
+	Private Sub txtserialNo_KeyDown(sender As Object, e As KeyEventArgs) Handles txtserialNo.KeyDown
+		If e.KeyCode = Keys.Enter And sender.Name = "txtserialNo" And txtserialNo.Text.Length >= 11 Then
+			Call GetSerialNo(DefectType)
+			If DefectType <> "" Then
+				GetSerialNo(DefectType)
+			End If
+		ElseIf e.KeyCode = Keys.F2 Then
+			'Call defectRegistered("F2")
+		ElseIf e.KeyCode = Keys.F5 Then
+			'Call defectRegistered("F5")
+		ElseIf e.KeyCode = Keys.Escape Then
+			Dispose()
+		End If
+	End Sub
+	Private Sub txtserialNo_TextChanged(sender As Object, e As EventArgs) Handles txtserialNo.TextChanged
+		If txtserialNo.BackColor = Color.Red Then txtserialNo.BackColor = Color.White
+
+		If lblproductNo.Text <> String.Empty Then
+			lblproductNo.Text = String.Empty
+			lblsettsuNo.Text = String.Empty
+			lbllotNo.Text = String.Empty
+
+			lbllineNo.Text = String.Empty
+			lblticketLineNo.Text = String.Empty
+		End If
+	End Sub
+
+	Private Sub cbqa_CheckedChanged(sender As Object, e As EventArgs) Handles cbqa.CheckedChanged
+		If cbqa.Checked = True Then
+			Dim employee = SelectQuery("SELECT [Line No],[Shift],[ID Number],[Name] [Employee Name],[Process],[Section],[Entry Date] " & vbNewLine &
+				 "FROM [mst_tms_record] WITH(NOLOCK) WHERE [Line No] IN('QAFP','QASI') AND [Process] IN('FI','SI') AND [Shift] = '" & var_shiftNo & "' " & vbNewLine &
+				 "ORDER BY [Line No] ASC , [Shift] ASC , [Name] ASC ", dbReference)
+			For i = 0 To employee.Rows.Count - 1
+				Dim li = viewtmsRecord.Items.Add(employee.Rows(i)("ID Number").ToString.Trim)
+				li.SubItems.Add(employee.Rows(i)("Employee Name").ToString.Trim)
+
+				viewtmsRecord.Items(viewtmsRecord.Items.Count - 1).ForeColor = Color.Blue
+				viewtmsRecord.Items(viewtmsRecord.Items.Count - 1).BackColor = Color.WhiteSmoke
+			Next
+		Else
+			Call populateEes()
+		End If
+	End Sub
+
+	Private Sub txtserialNo_Click(sender As Object, e As EventArgs) Handles txtserialNo.Click
+		CenterToScreen()
+	End Sub
+
+	Private Sub ComboBox1_SelectedIndexChanged(sender As Object, e As EventArgs) Handles cmbDefType.SelectedIndexChanged
+		'QR -Quick Repair
+		'PD -Pending
+		'RC -Rechecking
+		'MR -Must Rework
+		'DE -Defect Using EFU
+		'SM -Sample Maintenance
+		For Each ctrl As Control In Me.Controls
+			If TypeOf ctrl Is GroupBox Then
+				For Each innerCtrl As Control In ctrl.Controls
+					If innerCtrl.Name <> "cmbDefType" Then
+						innerCtrl.Enabled = True
+					End If
+				Next
+			ElseIf ctrl.Name <> "cmbDefType" Then
+				ctrl.Enabled = True
+			End If
+		Next
+		If cmbDefType.Text = "QR - Quick Repair" Then
+			DefectType = "QR"
+			DefectTypeDesc = "QREPAIR"
+			view_serialNos.Visible = False
+			grpBoxVerify.Visible = False
+		ElseIf cmbDefType.Text = "PD - Pending" Then
+			DefectType = "PD"
+			DefectTypeDesc = "PENDING"
+			view_serialNos.Visible = False
+			grpBoxVerify.Visible = False
+		ElseIf cmbDefType.Text = "PD - Pending" Then
+			DefectType = "RC"
+			DefectTypeDesc = "RECHECK"
+			view_serialNos.Visible = False
+			grpBoxVerify.Visible = False
+		ElseIf cmbDefType.Text = "MR - Must Rework" Then
+			DefectType = "MR"
+			DefectTypeDesc = "RECHECK"
+			view_serialNos.Visible = True
+			grpBoxVerify.Visible = True
+		ElseIf cmbDefType.Text = "DE - Defect Using EFU" Then
+			DefectType = "DE"
+			DefectTypeDesc = "RECHECK"
+			view_serialNos.Visible = False
+			grpBoxVerify.Visible = False
+		Else
+			DefectType = "SM"
+			DefectTypeDesc = "RECHECK"
+			view_serialNos.Visible = False
+			grpBoxVerify.Visible = False
+		End If
+	End Sub
+
+	''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+	''GET SERIAL NUMBER BY DEFECT TYPE 
+	Public Sub GetSerialNo(defectType As String)
+		If defectType = "QR" Then
+			getSerialNoQR()
+		ElseIf defectType = "PD" Then
+			getSerialNoPD()
+		ElseIf defectType = "RC" Then
+			getSerialNoRC()
+		ElseIf defectType = "MR" Then
+			getSerialNoMR()
+		ElseIf defectType = "DE" Then
+			getSerialNoDE()
+		Else
+			getSerialNoSM()
+		End If
+
+	End Sub
+
+	Private Function validateInput() As Boolean
+		If txtserialNo.Text.Length <> 11 Or lblproductNo.Text.Length <= 6 Then
+			Dim msg = New sysMessage("INVALID SERIAL NO." & vbNewLine & "PLEASE SCAN THE PRODUCT SERIAL NO.")
+			msg.ShowDialog() : txtserialNo.BackColor = Color.Red : txtserialNo.SelectAll() : txtserialNo.Focus() : Return False
+
+		ElseIf cboprocess.Text = String.Empty Then
+			Dim msg = New sysMessage("INVALID PROCESS CODE." & vbNewLine & "SELECT FROM THE LIST BOX.")
+			msg.ShowDialog() : Return False
+
+		ElseIf cmbMotherDef.Text = "" Then
+			gDefect.BackColor = Color.Red
+			Dim msg = New sysMessage("INVALID DEFECT NAME" & vbNewLine & "PLEASE TICKET WHAT DEFECT ENCOUNTERED.")
+			msg.ShowDialog() : gDefect.BackColor = Color.WhiteSmoke : Return False
+
+		ElseIf txtlocationOfDefects.Text.Length <= 3 Then
+			txtlocationOfDefects.BackColor = Color.Red
+			Dim msg = New sysMessage("ENTER LOCATION OF DEFECT" & vbNewLine & "OR ANY INFORMATION TO ILLUSTRATE")
+			msg.ShowDialog() : txtlocationOfDefects.BackColor = Color.White : txtlocationOfDefects.SelectAll() : txtlocationOfDefects.Focus() : Return False
+
+		ElseIf rbrepairMH2.Checked = False And rbrepairMH3.Checked = False And rbrepairMH1.Checked = False Then
+			grp_mh.BackColor = Color.Red
+			Dim msg = New sysMessage("SELECT WHICH MH WILL REPAIR THE HARNESS" & vbNewLine & "SELECT MH TO REPAIR/UNPLUG")
+			msg.ShowDialog() : grp_mh.BackColor = Color.WhiteSmoke : Return False
+
+		ElseIf rbrecrimpingYes.Checked = False And rbrecrimpingNo.Checked = False Then
+			grp_wp.BackColor = Color.Red
+			Dim msg = New sysMessage("SELECT RE-CRIMPING PROCESS" & vbNewLine & "DOES HARNESS NEED TO RE-CRIMP?")
+			msg.ShowDialog() : grp_wp.BackColor = Color.WhiteSmoke : Return False
+
+		ElseIf rbsonoSolderYES.Checked = False And rbsonoSolderNO.Checked = False Then
+			grp_sonoSolder.BackColor = Color.Red
+			Dim msg = New sysMessage("SELECT SPECIAL TREATMENT PROCESS" & vbNewLine & "SONOBOND OR SOLDER REWORK PROCESS.")
+			msg.ShowDialog() : grp_sonoSolder.BackColor = Color.WhiteSmoke : Return False
+
+		ElseIf (lbldefectCommittedBy.Text.Length <= 9 And txtotherContributor.Text.Length <= 3) And boolHold = False Then
+			txtdefectCommittedIdNumber.BackColor = Color.Red
+			Dim msg = New sysMessage("PLEASE COMPLETE ALL NECESSARY INFORMATION TO PROCEED" & vbNewLine & "INVALID DEFECT CONTRIBUTOR BY.")
+			msg.ShowDialog() : txtdefectCommittedIdNumber.BackColor = Color.White : txtdefectCommittedIdNumber.SelectAll() : txtdefectCommittedIdNumber.Focus() : Return False
+
+		ElseIf lbldefectNoticedBy.Text.Length <= 9 Then
+			txtdefectNoticedIdNumber.BackColor = Color.Red
+			Dim msg = New sysMessage("PLEASE COMPLETE ALL NECESSARY INFORMATION TO PROCEED" & vbNewLine & "INVALID DEFECT NOTICED BY.")
+			msg.ShowDialog() : txtdefectNoticedIdNumber.BackColor = Color.White : txtdefectNoticedIdNumber.SelectAll() : txtdefectNoticedIdNumber.Focus() : Return False
+		Else
+			Return True
+		End If
+	End Function
+
+	Sub getSerialNoQR()
+		If txtserialNo.BackColor = Color.Red Then txtserialNo.BackColor = Color.White
+
+		Dim tmp_labelPrintHistory = SelectQuery("EXEC [ticketing_SerialHeader] '" & Mid(txtserialNo.Text, 1, 11) & "',''", dbTicketing)
+
+		SaveQuery("EXECUTE [exec_scan_code] '" & var_lineNo1 & "','LL-QREPAIR','" & txtserialNo.Text & "','" & Environment.UserName & "','" & var_worker2 & "','" & var_worker3 & "'")
+
+		If tmp_labelPrintHistory.Rows.Count = 1 Then
+			lblproductNo.Text = tmp_labelPrintHistory.Rows(0).Item("Product No").ToString.Trim
+			lblsettsuNo.Text = tmp_labelPrintHistory.Rows(0).Item("Settsu No").ToString.Trim
+			lbllotNo.Text = tmp_labelPrintHistory.Rows(0).Item("Lot No").ToString.Trim
+
+			Try
+				var_lotSize = CInt(tmp_labelPrintHistory.Rows(0).Item("Lot Size").ToString.Trim)
+			Catch ex As Exception
+				var_lotSize = 0
+			End Try
+
+			lbllineNo.Text = var_lineNo1
+
+			lblticketLineNo.Text = tmp_labelPrintHistory.Rows(0)("Line No").ToString.Trim
+
+			cboprocess.Items.Clear()
+
+			If cboprocess.Items.Count <= 1 Then
+				If var_result_defectProcess.Rows.Count = 0 Then
+					cboprocess.DropDownStyle = ComboBoxStyle.DropDown
+				Else
+					Dim proc = var_result_defectProcess.Select("`Type` = 'QR - QUICK REPAIR'")
+					If bool_iGHS = True Then
+						proc = var_result_defectProcess.Select("`Type` = 'QR - QUICK REPAIR' AND `iGHS` = 1")
+					End If
+
+					For p = 0 To proc.Length - 1
+						cboprocess.Items.Add(proc.ToArray(p)("Work Process").ToString.Trim)
+					Next
+				End If
+			End If
+		Else
+			Dim sysMsg As New sysMessage("SERIAL HEADER INFORMATION NOT FOUND." & vbNewLine & vbNewLine & "PLEASE CALL LINE LEADER OF ASSY TO CHECK AND VERIFY IF SERIAL HEADER WAS ENCODED." & vbNewLine & vbNewLine & "AFFECTED SERIAL NO. : " & txtserialNo.Text)
+			sysMsg.ShowDialog() : txtserialNo.SelectAll() : txtserialNo.Focus() : Dispose()
+		End If
+	End Sub
+
+	Sub getSerialNoPD()
+		If txtserialNo.BackColor = Color.Red Then txtserialNo.BackColor = Color.White
+
+		Dim tmp_labelPrintHistory = SelectQuery("EXEC [ticketing_SerialHeader] '" & Mid(txtserialNo.Text, 1, 11) & "',''", dbTicketing)
+
+		SaveQuery("EXECUTE [exec_scan_code] '" & var_lineNo1 & "','LL-PENDING','" & txtserialNo.Text & "','" & Environment.UserName & "','" & var_worker2 & "','" & var_worker3 & "'")
+
+		If tmp_labelPrintHistory.Rows.Count = 1 Then
+			lblproductNo.Text = tmp_labelPrintHistory.Rows(0).Item("Product No").ToString.Trim
+			lblsettsuNo.Text = tmp_labelPrintHistory.Rows(0).Item("Settsu No").ToString.Trim
+			lbllotNo.Text = tmp_labelPrintHistory.Rows(0).Item("Lot No").ToString.Trim
+
+			Try
+				var_lotSize = CInt(tmp_labelPrintHistory.Rows(0).Item("Lot Size").ToString.Trim)
+			Catch ex As Exception
+				var_lotSize = 0
+			End Try
+
+			lbllineNo.Text = var_lineNo1
+
+			lblticketLineNo.Text = tmp_labelPrintHistory.Rows(0)("Line No").ToString.Trim
+
+			cboprocess.Items.Clear()
+
+			If cboprocess.Items.Count <= 1 Then
+				Dim proc = var_result_defectProcess.Select("`Type` = 'PD - PENDING'")
+				If bool_iGHS = True Then
+					proc = var_result_defectProcess.Select("`Type` = 'PD - PENDING' AND `iGHS` = 1")
+				End If
+
+				For p = 0 To proc.Length - 1
+					cboprocess.Items.Add(proc.ToArray(p)("Work Process").ToString.Trim)
+				Next
+			End If
+		Else
+			Dim sysMsg As New sysMessage("SERIAL HEADER INFORMATION NOT FOUND." & vbNewLine & vbNewLine & "PLEASE CALL LINE LEADER OF ASSY TO CHECK AND VERIFY IF SERIAL HEADER WAS ENCODED." & vbNewLine & vbNewLine & "AFFECTED SERIAL NO. : " & txtserialNo.Text)
+			sysMsg.ShowDialog() : txtserialNo.SelectAll() : txtserialNo.Focus() : Dispose()
+		End If
+	End Sub
+
+	Sub getSerialNoRC()
+		If txtserialNo.BackColor = Color.Red Then txtserialNo.BackColor = Color.White
+		Dim tmp_labelPrintHistory = SelectQuery("EXEC [ticketing_SerialHeader] '" & Mid(txtserialNo.Text.Trim, 1, 11) & "','';", dbTicketing)
+
+		SaveQuery("EXECUTE [exec_scan_code] '" & var_lineNo1 & "','LL-RECHECKING','" & txtserialNo.Text & "','" & Environment.UserName & "','" & var_worker2 & "','" & var_worker3 & "'")
+
+		If tmp_labelPrintHistory.Rows.Count = 1 Then
+			lblproductNo.Text = tmp_labelPrintHistory.Rows(0).Item("Product No").ToString.Trim
+			lblsettsuNo.Text = tmp_labelPrintHistory.Rows(0).Item("Settsu No").ToString.Trim
+			lbllotNo.Text = tmp_labelPrintHistory.Rows(0).Item("Lot No").ToString.Trim
+
+			Try
+				var_lotSize = CInt(tmp_labelPrintHistory.Rows(0).Item("Lot Size").ToString.Trim)
+			Catch ex As Exception
+				var_lotSize = 0
+			End Try
+
+			lbllineNo.Text = var_lineNo1
+
+			lblticketLineNo.Text = tmp_labelPrintHistory.Rows(0)("Line No").ToString.Trim
+
+			If cboprocess.Items.Count = 0 Then
+
+				Dim proc = var_result_defectProcess.Select("`Type` = 'RC - RECHECKING'")
+				'If bool_iGHS = True Then
+				'    proc = var_result_defectProcess.Select("`Type` = 'RC - RECHECKING' AND `iGHS` = 1")
+				'End If
+
+				For p = 0 To proc.Length - 1
+					cboprocess.Items.Add(proc.ToArray(p)("Work Process").ToString.Trim)
+				Next
+			End If
+		End If
+
+		txtserialNo.SelectAll() : txtserialNo.Focus()
+	End Sub
+
+	Sub getSerialNoMR()
+		If txtserialNo.BackColor = Color.Red Then txtserialNo.BackColor = Color.White
+
+		Dim serial = result_serialNos.Select("`Serial No.` = '" & Mid(txtserialNo.Text.Trim, 1, 11) & "'")
+
+		SaveQuery("EXECUTE [exec_scan_code] '" & var_lineNo1 & "','LL-MUST REWORK','" & txtserialNo.Text & "','" & Environment.UserName & "','" & var_worker2 & "','" & var_worker3 & "'")
+
+		If serial.Length = 1 Then
+			Dim msg = New sysMessage("SERIAL NO. ALREADY SCAN, CHECK FROM THE LIST." & vbNewLine & "SCAN ANOTHER PRODUCT/HARNESS WITH DEFECT.")
+			msg.ShowDialog() : Return
+		End If
+
+		Dim tmp_labelPrintHistory = SelectQuery("EXEC [ticketing_SerialHeader] '" & Mid(txtserialNo.Text, 1, 11) & "',''", dbTicketing)
+
+		If tmp_labelPrintHistory.Rows.Count = 1 Then
+			lblproductNo.Text = tmp_labelPrintHistory.Rows(0).Item("Product No").ToString.Trim
+			lblsettsuNo.Text = tmp_labelPrintHistory.Rows(0).Item("Settsu No").ToString.Trim
+			lbllotNo.Text = tmp_labelPrintHistory.Rows(0).Item("Lot No").ToString.Trim
+
+			Try
+				var_lotSize = CInt(tmp_labelPrintHistory.Rows(0).Item("Lot Size").ToString.Trim)
+			Catch ex As Exception
+				var_lotSize = 0
+			End Try
+
+			lbllineNo.Text = var_lineNo1
+
+			lblticketLineNo.Text = tmp_labelPrintHistory.Rows(0)("Line No").ToString.Trim
+
+			result_serialNos.Rows.Add()
+			result_serialNos.Rows(result_serialNos.Rows.Count - 1)("Serial No.") = Mid(txtserialNo.Text.Trim, 1, 11)
+			result_serialNos.Rows(result_serialNos.Rows.Count - 1)("Product No.") = lblproductNo.Text
+			result_serialNos.Rows(result_serialNos.Rows.Count - 1)("Settsu No.") = lblsettsuNo.Text
+			result_serialNos.Rows(result_serialNos.Rows.Count - 1)("Lot No.") = lbllotNo.Text
+			result_serialNos.Rows(result_serialNos.Rows.Count - 1)("Lot Size") = var_lotSize
+			result_serialNos.Rows(result_serialNos.Rows.Count - 1)("Product Line No") = var_lineNo1
+			result_serialNos.Rows(result_serialNos.Rows.Count - 1)("Ticket Line No") = lblticketLineNo.Text
+
+			Dim li = view_serialNos.Items.Add(Mid(txtserialNo.Text.Trim, 1, 11))
+			li.SubItems.Add(lblproductNo.Text)
+			li.SubItems.Add(lbllotNo.Text)
+
+		End If
+
+		txtserialNo.SelectAll() : txtserialNo.Focus()
+	End Sub
+
+	Sub getSerialNoDE() ' EFU
+		If txtserialNo.BackColor = Color.Red Then txtserialNo.BackColor = Color.White
+
+		SaveQuery("EXECUTE [exec_scan_code] '" & var_lineNo1 & "','LL-EFU','" & txtserialNo.Text & "','" & Environment.UserName & "','" & var_worker2 & "','" & var_worker3 & "'")
+
+		Dim tmp_labelPrintHistory As New DataTable("result")
+
+		If txtserialNo.Text.Length >= 15 Then
+			tmp_labelPrintHistory = SelectQuery("EXEC [get_CaselabelNo] '" & txtserialNo.Text & "'", dbPLS2)
+			If tmp_labelPrintHistory.Rows.Count >= 1 Then
+				txtserialNo.Text = tmp_labelPrintHistory.Rows(0).Item("Order No").ToString.Trim
+			End If
+
+		Else
+			tmp_labelPrintHistory = SelectQuery("SELECT SUBSTRING([Line No],2,4) [Line No],[Efu No] [Serial No],LTRIM(RTRIM(SUBSTRING([Product No],1,18))) [Product No],[Settsu No],SUBSTRING([Work Order No],1,5) [Lot No],[Production Quantity] [Lot Size] FROM [vw_efu_serialNo_Combined] WITH(NOLOCK) WHERE [Efu No] = '" & txtserialNo.Text & "'", dbEfu)
+		End If
+
+		If tmp_labelPrintHistory.Rows.Count = 1 Then
+			lblproductNo.Text = tmp_labelPrintHistory.Rows(0).Item("Product No").ToString.Trim
+			lblsettsuNo.Text = tmp_labelPrintHistory.Rows(0).Item("Settsu No").ToString.Trim
+			lbllotNo.Text = tmp_labelPrintHistory.Rows(0).Item("Lot No").ToString.Trim
+
+			Try
+				var_lotSize = CInt(tmp_labelPrintHistory.Rows(0).Item("Lot Size").ToString.Trim)
+			Catch ex As Exception
+				var_lotSize = 0
+			End Try
+
+			lbllineNo.Text = var_lineNo1
+
+			lblticketLineNo.Text = tmp_labelPrintHistory.Rows(0)("Line No").ToString.Trim
+
+			txtserialNo.SelectAll() : txtserialNo.Focus()
+
+			If cboprocess.Items.Count = 0 Then
+				Dim proc = var_result_defectProcess.Select("`Type` = 'RC - RECHECKING'")
+
+				For p = 0 To proc.Length - 1
+					cboprocess.Items.Add(proc.ToArray(p)("Work Process").ToString.Trim)
+				Next
+
+
+				For p = 0 To proc.Length - 1
+					cboprocess.Items.Add(proc.ToArray(p)("Work Process").ToString.Trim)
+				Next
+			End If
+		End If
+	End Sub
+
+	Sub getSerialNoSM()
+		If txtserialNo.BackColor = Color.Red Then txtserialNo.BackColor = Color.White
+		Dim tmp_labelPrintHistory = SelectQuery("EXEC [sp_ticketing_productlabelInfo] '" & Mid(txtserialNo.Text.Trim, 1, 11) & "';", dbPLS2)
+		If tmp_labelPrintHistory.Rows.Count = 1 Then
+			lblproductNo.Text = tmp_labelPrintHistory.Rows(0).Item("Product No").ToString.Trim
+			lblsettsuNo.Text = tmp_labelPrintHistory.Rows(0).Item("Settsu No").ToString.Trim
+			lbllotNo.Text = tmp_labelPrintHistory.Rows(0).Item("Lot No").ToString.Trim
+
+			Try
+				var_lotSize = CInt(tmp_labelPrintHistory.Rows(0).Item("Lot Size").ToString.Trim)
+			Catch ex As Exception
+				var_lotSize = 0
+			End Try
+
+			lbllineNo.Text = var_lineNo1
+
+			lblticketLineNo.Text = var_lineNo1
+
+			txtserialNo.SelectAll() : txtserialNo.Focus()
+
+			If cboprocess.Items.Count = 0 Then
+				Dim proc = var_result_defectProcess.Select("`Type` = 'SA - SAMPLE MAINTENANCE'")
+
+				For p = 0 To proc.Length - 1
+					cboprocess.Items.Add(proc.ToArray(p)("Work Process").ToString.Trim)
+				Next
+			End If
+		End If
+	End Sub
+
+	'''
+	REM DEFECT REFISTERED >>
+	'QR -Quick Repair
+	'PD -Pending
+	'RC -Rechecking
+	'MR -Must Rework
+	'DE -Defect Using EFU
+	'SM -Sample Maintenance
+
+	Private Sub defectRegisteredQR(ByRef key As String)
+		If key = "F2" Then
+			boolHold = False
+		Else
+			txtdefectCommittedIdNumber.Clear() : txtotherContributor.Clear()
+			boolHold = True
+		End If
+
+		If validateInput() = True Then
+			Dim passmark_altered As String = String.Empty
+
+			If cbalterBK.Checked = True Then passmark_altered &= "BK,"
+			If cbalterSPP.Checked = True Then passmark_altered &= "SPP,"
+			If cbalterGR.Checked = True Then passmark_altered &= "GROM,"
+			If cbalterCL.Checked = True Then passmark_altered &= "CL,"
+			If cbalterV1.Checked = True Then passmark_altered &= "V1,"
+			If cbalterSPI1.Checked = True Then passmark_altered &= "SPI1,"
+			If cbalterCK.Checked = True Then passmark_altered &= "CKT,"
+			If cbalterRI.Checked = True Then passmark_altered &= "SI,"
+			If cbalterRM.Checked = True Then passmark_altered &= "RM,"
+			If cbalterV2.Checked = True Then passmark_altered &= "V2,"
+			If cbalterV3.Checked = True Then passmark_altered &= "V3,"
+			If cbalterSPI2.Checked = True Then passmark_altered &= "SPI2,"
+			If cbalterHB.Checked = True Then passmark_altered &= "HB,"
+			If cbalterBL.Checked = True Then passmark_altered &= "BO,"
+			If cbalterST.Checked = True Then passmark_altered &= "ST,"
+			If cbalterPO.Checked = True Then passmark_altered &= "PR,"
+			If cbalterFC.Checked = True Then passmark_altered &= "FC,"
+
+			If passmark_altered.Length >= 1 Then passmark_altered = Mid(passmark_altered, 1, passmark_altered.Length - 1)
+
+			REM *********************************MH1/2/3********************************************
+			Dim tmp_MHSelected As String = "N/A"
+			If rbrepairMH2.Checked Then
+				tmp_MHSelected = "MH2"
+			ElseIf rbrepairMH3.Checked Then
+				tmp_MHSelected = "MH3"
+			Else
+				tmp_MHSelected = "MH1"
+			End If
+
+			Dim tmp_reCrimping As String = "NO"
+			If rbrecrimpingYes.Checked Then tmp_reCrimping = "YES"
+
+			Dim tmp_sonoSolder As String = "NO"
+			If rbsonoSolderYES.Checked = True Then tmp_sonoSolder = "YES"
+
+			If cbalterCK.Checked = True Then
+				var_ticketNo = New issue_ticketNo("R" & lblticketLineNo.Text).issuedTicketNo
+			Else
+				var_ticketNo = New issue_ticketNo(lblticketLineNo.Text).issuedTicketNo
+			End If
+
+			SaveQuery("INSERT INTO [inspection_result]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Caselabel_No],[Case_Qty],[Product_Label_No],[Product_No],[Settsu_No],[Lot_No],[Lot_Size],[Product_Status],[Entry_DT],[Terminal],[Update_Entry],[Worker_Main],[Worker_Support1],[Worker_Support2],[Worker_Support3],[Worker_Support4],[Airbag],[Header Line No.]) " &
+				 "VALUES('" & var_ticketNo & "','" & var_lineNo1 & "'," & var_shiftNo & ",'" & cboprocess.Text & "','" & "" & "','" & "" & "','" & Mid(txtserialNo.Text.Trim, 1, 11) & "','" & lblproductNo.Text & "','" & lblsettsuNo.Text & "','" & lbllotNo.Text & "'," & var_lotSize & ",'QREPAIR',GETDATE(),'" & My.Computer.Name & "',GETDATE(),'" & lbldefectNoticedBy.Text & "','','','','','','" & lblticketLineNo.Text & "')", dbTicketing)
+
+			Dim stringContributor As String = String.Empty
+
+			If txtdefectCommittedIdNumber.Text.Length = 6 And lbldefectCommittedBy.Text.Length >= 6 Then
+				stringContributor = lbldefectCommittedBy.Text
+			Else
+				stringContributor = txtotherContributor.Text
+			End If
+
+			Dim strPrint As String = "NO"
+			If var_lineNo2 = "SI01" Then strPrint = "YES"
+
+			Dim query_defectEntry As String = "INSERT INTO [defect_entry]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Product_Label_No]" &
+				 ",[Product_No],[Settsu_No],[Lot_No],[Defect_Type],[DT_Entry],[Other_Defects],[Location_Of_Defect],[Defect_Committed_By],[Process_Encountered],[Process_Encountered_DT],[Process_Noticed_By],[Terminal]" &
+				 ",[MH_Selected],[For_Wireprep],[For_Sonobond],[Passmark_Alter],[IsPrinted],[Header Line No.],[defect_Item_ID]) VALUES" &
+				 "('" & var_ticketNo & "','" & var_lineNo1 & "','" & var_shiftNo & "','" & "LL" & "','" & Mid(txtserialNo.Text, 1, 11) & "','" &
+				 lblproductNo.Text & "','" & lblsettsuNo.Text & "','" & lbllotNo.Text & "','" & "QREPAIR" & "',GETDATE()," &
+				 "'" & LblSelectedDefect.Text & "','" & txtlocationOfDefects.Text & "'," &
+				 "'" & stringContributor & "','" & cboprocess.Text & "',GETDATE(),'" & lbldefectNoticedBy.Text & "',HOST_NAME()," &
+				 "'" & tmp_MHSelected & "','" & tmp_reCrimping & "','" & tmp_sonoSolder & "','" & passmark_altered & "','" & strPrint & "','" & lblticketLineNo.Text & "','" & DefectItemID & "')"
+			SaveQuery(query_defectEntry, dbTicketing)
+
+			SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] IN('V2','FI','SI','SP')", dbTicketing)
+
+			If cbalterV1.Checked Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'V1'")
+			End If
+			If cbalterV2.Checked Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'V2'")
+			End If
+			If cbalterV3.Checked Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'V3'")
+			End If
+			If cbalterSPI1.Checked = True Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'SPI1'")
+			End If
+			If cbalterSPI2.Checked = True Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'SPI2'")
+			End If
+			If cbalterFC.Checked = True Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'FC'")
+			End If
+
+			If MessageBox.Show("DEFECT SUCCESSFULLY REGISTERED!" & vbNewLine & vbNewLine &
+				 "DO YOU WANT TO ADD ANOTHER DEFECT ON THIS PRODUCT/HARNESS?", "Defect Registered!", MessageBoxButtons.YesNo, MessageBoxIcon.Information) = Windows.Forms.DialogResult.Yes Then
+
+				txtserialNo.Clear() : txtserialNo.Focus()
+			Else
+				Dispose()
+			End If
+
+		End If
+	End Sub
+	Private Sub defectRegisteredPD(ByRef key As String)
+		If key = "F2" Then
+			boolHold = False
+		Else
+			txtdefectCommittedIdNumber.Clear() : txtotherContributor.Clear()
+			boolHold = True
+		End If
+
+		If validateInput() = True Then
+			Dim passmark_altered As String = String.Empty
+
+			If cbalterBK.Checked = True Then passmark_altered &= "BK,"
+			If cbalterSPP.Checked = True Then passmark_altered &= "SPP,"
+			If cbalterGR.Checked = True Then passmark_altered &= "GROM,"
+			If cbalterCL.Checked = True Then passmark_altered &= "CL,"
+			If cbalterV1.Checked = True Then passmark_altered &= "V1,"
+			If cbalterSPI1.Checked = True Then passmark_altered &= "SPI1,"
+			If cbalterCK.Checked = True Then passmark_altered &= "CKT,"
+			If cbalterRI.Checked = True Then passmark_altered &= "SI,"
+			If cbalterRM.Checked = True Then passmark_altered &= "RM,"
+			If cbalterV2.Checked = True Then passmark_altered &= "V2,"
+			If cbalterV3.Checked = True Then passmark_altered &= "V3,"
+			If cbalterSPI2.Checked = True Then passmark_altered &= "SPI2,"
+			If cbalterHB.Checked = True Then passmark_altered &= "HB,"
+			If cbalterBL.Checked = True Then passmark_altered &= "BO,"
+			If cbalterST.Checked = True Then passmark_altered &= "ST,"
+			If cbalterPO.Checked = True Then passmark_altered &= "PR,"
+			If cbalterFC.Checked = True Then passmark_altered &= "FC,"
+
+			If passmark_altered.Length >= 1 Then passmark_altered = Mid(passmark_altered, 1, passmark_altered.Length - 1)
+
+			REM *********************************MH1/2/3********************************************
+			Dim tmp_MHSelected As String = "N/A"
+			If rbrepairMH2.Checked Then
+				tmp_MHSelected = "MH2"
+			ElseIf rbrepairMH3.Checked Then
+				tmp_MHSelected = "MH3"
+			Else
+				tmp_MHSelected = "MH1"
+			End If
+
+			Dim tmp_reCrimping As String = "NO"
+			If rbrecrimpingYes.Checked Then tmp_reCrimping = "YES"
+
+			Dim tmp_sonoSolder As String = "NO"
+			If rbsonoSolderYES.Checked = True Then tmp_sonoSolder = "YES"
+
+			If cbalterCK.Checked = True Then
+				var_ticketNo = New issue_ticketNo("R" & lblticketLineNo.Text).issuedTicketNo
+			Else
+				var_ticketNo = New issue_ticketNo(lblticketLineNo.Text).issuedTicketNo
+			End If
+
+			SaveQuery("INSERT INTO [inspection_result]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Caselabel_No],[Case_Qty],[Product_Label_No],[Product_No],[Settsu_No],[Lot_No],[Lot_Size],[Product_Status],[Entry_DT],[Terminal],[Update_Entry],[Worker_Main],[Worker_Support1],[Worker_Support2],[Worker_Support3],[Worker_Support4],[Airbag],[Header Line No.]) " &
+					"VALUES('" & var_ticketNo & "','" & var_lineNo1 & "'," & var_shiftNo & ",'" & cboprocess.Text & "','" & "" & "','" & "" & "','" & Mid(txtserialNo.Text.Trim, 1, 11) & "','" & lblproductNo.Text & "','" & lblsettsuNo.Text & "','" & lbllotNo.Text & "'," & var_lotSize & ",'PENDING',GETDATE(),'" & My.Computer.Name & "',GETDATE(),'" & lbldefectNoticedBy.Text & "','','','','','','" & lblticketLineNo.Text & "')", dbTicketing)
+
+			Dim stringContributor As String = String.Empty
+
+			If txtdefectCommittedIdNumber.Text.Length = 6 And lbldefectCommittedBy.Text.Length >= 6 Then
+				stringContributor = lbldefectCommittedBy.Text
+			Else
+				stringContributor = txtotherContributor.Text
+			End If
+
+			Dim strPrint As String = "NO"
+			If var_lineNo2 = "SI01" Then strPrint = "YES"
+
+			SaveQuery("INSERT INTO [defect_entry]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Product_Label_No],[Product_No],[Settsu_No],[Lot_No],[Defect_Type],[DT_Entry],[Other_Defects],[Location_Of_Defect]" &
+				 ",[Defect_Committed_By],[Process_Encountered],[Process_Encountered_DT],[Process_Noticed_By],[Terminal],[MH_Selected],[For_Wireprep],[For_Sonobond],[Passmark_Alter],[IsPrinted],[Header Line No.],[defect_Item_ID]) VALUES" &
+				 "('" & var_ticketNo & "','" & var_lineNo1 & "','" & var_shiftNo & "','" & "LL" & "','" & Mid(txtserialNo.Text, 1, 11) & "','" &
+				 lblproductNo.Text & "','" & lblsettsuNo.Text & "','" & lbllotNo.Text & "','" & "PENDING" & "',GETDATE()," &
+				 "'" & LblSelectedDefect.Text & "','" & txtlocationOfDefects.Text & "'," &
+				 "'" & stringContributor & "','" & cboprocess.Text & "',GETDATE(),'" & lbldefectNoticedBy.Text & "',HOST_NAME()," &
+				 "'" & tmp_MHSelected & "','" & tmp_reCrimping & "','" & tmp_sonoSolder & "','" & passmark_altered & "','" & strPrint & "','" & lblticketLineNo.Text & "','" & DefectItemID & "')", dbTicketing)
+
+			If cbalterV1.Checked Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'V1'")
+			End If
+			If cbalterV2.Checked Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'V2'")
+			End If
+			If cbalterV3.Checked Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'V3'")
+			End If
+			If cbalterSPI1.Checked = True Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'SPI1'")
+			End If
+			If cbalterSPI2.Checked = True Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'SPI2'")
+			End If
+			If cbalterFC.Checked = True Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'FC'")
+			End If
+
+			If cbalterCL.Checked Or cbalterCK.Checked Then
+				Dim s = SelectQuery("SELECT [Sub Serial No.] FROM [inspection_sub_result] WHERE [Serial No.] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Product No] = '" & lblproductNo.Text.Trim & "' AND [Settsu No] = '" & lblsettsuNo.Text.Trim & "'", dbTicketing)
+
+				Dim listOfSerial As String = String.Empty
+
+				For i = 0 To s.Rows.Count - 1
+					listOfSerial &= "'" & s.Rows(i)("Sub Serial No.").ToString.Trim & "',"
+				Next
+
+				If s.Rows.Count >= 1 Then
+					listOfSerial = Mid(listOfSerial, 1, listOfSerial.Length - 1)
+				End If
+
+				If listOfSerial.Length >= 11 Then SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] IN(" & listOfSerial & ")")
+			End If
+
+			If MessageBox.Show("DEFECT SUCCESSFULLY REGISTERED!" & vbNewLine & vbNewLine &
+				 "DO YOU WANT TO ADD ANOTHER DEFECT ON THIS PRODUCT/HARNESS?", "Defect Registered!", MessageBoxButtons.YesNo, MessageBoxIcon.Information) = Windows.Forms.DialogResult.Yes Then
+
+				txtserialNo.Clear() : txtserialNo.Focus()
+			Else
+				Dispose()
+			End If
+
+		End If
+	End Sub
+	Private Sub defectRegisteredRC(ByRef key As String)
+		If key = "F2" Then
+			boolHold = False
+		Else
+			txtdefectCommittedIdNumber.Clear() : txtotherContributor.Clear()
+			boolHold = True
+		End If
+
+		If validateInput() = True Then
+			Dim passmark_altered As String = String.Empty
+
+			If cbalterBK.Checked = True Then passmark_altered &= "BK,"
+			If cbalterSPP.Checked = True Then passmark_altered &= "SPP,"
+			If cbalterGR.Checked = True Then passmark_altered &= "GROM,"
+			If cbalterCL.Checked = True Then passmark_altered &= "CL,"
+			If cbalterV1.Checked = True Then passmark_altered &= "V1,"
+			If cbalterSPI1.Checked = True Then passmark_altered &= "SPI1,"
+			If cbalterCK.Checked = True Then passmark_altered &= "CKT,"
+			If cbalterRI.Checked = True Then passmark_altered &= "SI,"
+			If cbalterRM.Checked = True Then passmark_altered &= "RM,"
+			If cbalterV2.Checked = True Then passmark_altered &= "V2,"
+			If cbalterV3.Checked = True Then passmark_altered &= "V3,"
+			If cbalterSPI2.Checked = True Then passmark_altered &= "SPI2,"
+			If cbalterHB.Checked = True Then passmark_altered &= "HB,"
+			If cbalterBL.Checked = True Then passmark_altered &= "BO,"
+			If cbalterST.Checked = True Then passmark_altered &= "ST,"
+			If cbalterPO.Checked = True Then passmark_altered &= "PR,"
+			If cbalterFC.Checked = True Then passmark_altered &= "FC,"
+
+			If passmark_altered.Length >= 1 Then passmark_altered = Mid(passmark_altered, 1, passmark_altered.Length - 1)
+
+			REM *********************************MH1/2/3********************************************
+			Dim tmp_MHSelected As String = "N/A"
+			If rbrepairMH2.Checked Then
+				tmp_MHSelected = "MH2"
+			ElseIf rbrepairMH3.Checked Then
+				tmp_MHSelected = "MH3"
+			Else
+				tmp_MHSelected = "MH1"
+			End If
+
+			Dim tmp_reCrimping As String = "NO"
+			If rbrecrimpingYes.Checked Then tmp_reCrimping = "YES"
+
+			Dim tmp_sonoSolder As String = "NO"
+			If rbsonoSolderYES.Checked = True Then tmp_sonoSolder = "YES"
+
+			If cbalterCK.Checked = True Then
+				var_ticketNo = New issue_ticketNo("R" & lblticketLineNo.Text).issuedTicketNo
+			Else
+				var_ticketNo = New issue_ticketNo(lblticketLineNo.Text).issuedTicketNo
+			End If
+
+			SaveQuery("INSERT INTO [inspection_result]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Caselabel_No],[Case_Qty],[Product_Label_No],[Product_No],[Settsu_No],[Lot_No],[Lot_Size],[Product_Status],[Entry_DT],[Terminal],[Update_Entry],[Worker_Main],[Worker_Support1],[Worker_Support2],[Worker_Support3],[Worker_Support4],[Airbag],[Header Line No.]) " &
+					"VALUES('" & var_ticketNo & "','" & var_lineNo1 & "'," & var_shiftNo & ",'" & cboprocess.Text & "','" & "" & "','" & "" & "','" & Mid(txtserialNo.Text.Trim, 1, 11) & "','" & lblproductNo.Text & "','" & lblsettsuNo.Text & "','" & lbllotNo.Text & "'," & var_lotSize & ",'RECHECK',GETDATE(),'" & My.Computer.Name & "',GETDATE(),'" & lbldefectNoticedBy.Text & "','','','','','','" & lblticketLineNo.Text & "')", dbTicketing)
+
+			Dim stringContributor As String = String.Empty
+
+			If txtdefectCommittedIdNumber.Text.Length = 6 And lbldefectCommittedBy.Text.Length >= 6 Then
+				stringContributor = lbldefectCommittedBy.Text
+			Else
+				stringContributor = txtotherContributor.Text
+			End If
+
+			Dim strPrint As String = "NO"
+			If var_lineNo2 = "SI01" Then strPrint = "YES"
+
+			SaveQuery("INSERT INTO [defect_entry]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Product_Label_No],[Product_No],[Settsu_No],[Lot_No],[Defect_Type],[DT_Entry],[Other_Defects],[Location_Of_Defect]" &
+				 ",[Defect_Committed_By],[Process_Encountered],[Process_Encountered_DT],[Process_Noticed_By],[Terminal],[MH_Selected],[For_Wireprep],[For_Sonobond],[Passmark_Alter],[IsPrinted],[Header Line No.],[defect_Item_ID]) VALUES" &
+				 "('" & var_ticketNo & "','" & var_lineNo1 & "','" & var_shiftNo & "','" & "LL" & "','" & Mid(txtserialNo.Text, 1, 11) & "','" &
+				 lblproductNo.Text & "','" & lblsettsuNo.Text & "','" & lbllotNo.Text & "','" & "RECHECK" & "',GETDATE()," &
+				 "'" & LblSelectedDefect.Text & "','" & txtlocationOfDefects.Text & "'," &
+				 "'" & stringContributor & "','" & cboprocess.Text & "',GETDATE(),'" & lbldefectNoticedBy.Text & "',HOST_NAME()," &
+				 "'" & tmp_MHSelected & "','" & tmp_reCrimping & "','" & tmp_sonoSolder & "','" & passmark_altered & "','" & strPrint & "','" & lblticketLineNo.Text & "','" & DefectItemID & "')", dbTicketing)
+
+			If cbalterV1.Checked Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'V1'")
+			End If
+
+			If cbalterV2.Checked Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'V2'")
+			End If
+
+			If cbalterV3.Checked Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'V3'")
+			End If
+
+			If cbalterSPI1.Checked = True Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'SPI1'")
+			End If
+
+			If cbalterSPI2.Checked = True Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'SPI2'")
+			End If
+
+			If cbalterFC.Checked = True Then
+				SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Work_Process] = 'FC'")
+			End If
+
+			If cbalterCL.Checked Or cbalterCK.Checked Then
+				Dim s = SelectQuery("SELECT [Sub Serial No.] FROM [inspection_sub_result] WHERE [Serial No.] = '" & Mid(txtserialNo.Text, 1, 11) & "' AND [Product No] = '" & lblproductNo.Text.Trim & "' AND [Settsu No] = '" & lblsettsuNo.Text.Trim & "'", dbTicketing)
+
+				Dim listOfSerial As String = String.Empty
+
+				For i = 0 To s.Rows.Count - 1
+					listOfSerial &= "'" & s.Rows(i)("Sub Serial No.").ToString.Trim & "',"
+				Next
+
+				If s.Rows.Count >= 1 Then
+					listOfSerial = Mid(listOfSerial, 1, listOfSerial.Length - 1)
+				End If
+
+				If listOfSerial.Length >= 11 Then SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] IN(" & listOfSerial & ")")
+			End If
+
+			If MessageBox.Show("DEFECT SUCCESSFULLY REGISTERED!" & vbNewLine & vbNewLine &
+				 "DO YOU WANT TO ADD ANOTHER DEFECT ON THIS PRODUCT/HARNESS?", "Defect Registered!", MessageBoxButtons.YesNo, MessageBoxIcon.Information) = Windows.Forms.DialogResult.Yes Then
+
+				lblproductNo.Text = String.Empty
+				lblsettsuNo.Text = String.Empty
+				lbllotNo.Text = String.Empty
+
+				lbllineNo.Text = String.Empty
+				lblticketLineNo.Text = String.Empty
+
+				txtserialNo.Clear() : txtserialNo.Focus()
+			Else
+				Dispose()
+			End If
+
+		End If
+	End Sub
+	Private Sub defectRegisteredMR(ByRef key As String)
+		If key = "F2" Then
+			boolHold = False
+		Else
+			txtdefectCommittedIdNumber.Clear() : txtotherContributor.Clear()
+			boolHold = True
+		End If
+
+		If validateInput() = True Then
+			Dim passmark_altered As String = String.Empty
+
+			If cbalterBK.Checked = True Then passmark_altered &= "BK,"
+			If cbalterSPP.Checked = True Then passmark_altered &= "SPP,"
+			If cbalterGR.Checked = True Then passmark_altered &= "GROM,"
+			If cbalterCL.Checked = True Then passmark_altered &= "CL,"
+			If cbalterV1.Checked = True Then passmark_altered &= "V1,"
+			If cbalterSPI1.Checked = True Then passmark_altered &= "SPI1,"
+			If cbalterCK.Checked = True Then passmark_altered &= "CKT,"
+			If cbalterRI.Checked = True Then passmark_altered &= "SI,"
+			If cbalterRM.Checked = True Then passmark_altered &= "RM,"
+			If cbalterV2.Checked = True Then passmark_altered &= "V2,"
+			If cbalterV3.Checked = True Then passmark_altered &= "V3,"
+			If cbalterSPI2.Checked = True Then passmark_altered &= "SPI2,"
+			If cbalterHB.Checked = True Then passmark_altered &= "HB,"
+			If cbalterBL.Checked = True Then passmark_altered &= "BO,"
+			If cbalterST.Checked = True Then passmark_altered &= "ST,"
+			If cbalterPO.Checked = True Then passmark_altered &= "PR,"
+			If cbalterFC.Checked = True Then passmark_altered &= "FC,"
+
+			If passmark_altered.Length >= 1 Then passmark_altered = Mid(passmark_altered, 1, passmark_altered.Length - 1)
+
+			REM *********************************MH1/2/3********************************************
+			Dim tmp_MHSelected As String = "N/A"
+			If rbrepairMH2.Checked Then
+				tmp_MHSelected = "MH2"
+			ElseIf rbrepairMH3.Checked Then
+				tmp_MHSelected = "MH3"
+			Else
+				tmp_MHSelected = "MH1"
+			End If
+
+			Dim tmp_reCrimping As String = "NO"
+			If rbrecrimpingYes.Checked Then tmp_reCrimping = "YES"
+
+			Dim tmp_sonoSolder As String = "NO"
+			If rbsonoSolderYES.Checked = True Then tmp_sonoSolder = "YES"
+
+			For i = 0 To result_serialNos.Rows.Count - 1
+				If cbalterCK.Checked = True Then
+					var_ticketNo = New issue_ticketNo("R" & lblticketLineNo.Text).issuedTicketNo
+				Else
+					var_ticketNo = New issue_ticketNo(lblticketLineNo.Text).issuedTicketNo
+				End If
+
+				SaveQuery("INSERT INTO [inspection_result]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Caselabel_No],[Case_Qty],[Product_Label_No],[Product_No],[Settsu_No],[Lot_No],[Lot_Size],[Product_Status],[Entry_DT],[Terminal],[Update_Entry],[Worker_Main],[Worker_Support1],[Worker_Support2],[Worker_Support3],[Worker_Support4],[Airbag],[Header Line No.]) " &
+						"VALUES('" & var_ticketNo & "','" & var_lineNo1 & "'," & var_shiftNo & ",'" & cboprocess.Text & "','" & "" & "','" & "" & "','" & result_serialNos.Rows(i)("Serial No.").ToString.Trim & "','" & result_serialNos.Rows(i)("Product No.").ToString.Trim & "','" & result_serialNos.Rows(i)("Settsu No.").ToString.Trim & "','" & result_serialNos.Rows(i)("Lot No.").ToString.Trim & "'," & result_serialNos.Rows(i)("Lot Size").ToString.Trim & ",'RECHECK',GETDATE(),'" & My.Computer.Name & "',GETDATE(),'" & lbldefectNoticedBy.Text & "','','','','','','" & lblticketLineNo.Text & "')", dbTicketing)
+
+				Dim stringContributor As String = String.Empty
+
+				If txtdefectCommittedIdNumber.Text.Length = 6 And lbldefectCommittedBy.Text.Length >= 6 Then
+					stringContributor = lbldefectCommittedBy.Text
+				Else
+					stringContributor = txtotherContributor.Text
+				End If
+
+				Dim strPrint As String = "NO"
+				If var_lineNo2 = "SI01" Then strPrint = "YES"
+
+				SaveQuery("INSERT INTO [defect_entry]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Product_Label_No],[Product_No],[Settsu_No],[Lot_No],[Defect_Type],[DT_Entry],[Other_Defects],[Location_Of_Defect]" &
+					 ",[Defect_Committed_By],[Process_Encountered],[Process_Encountered_DT],[Process_Noticed_By],[Terminal],[MH_Selected],[For_Wireprep],[For_Sonobond],[Passmark_Alter],[IsPrinted],[Header Line No.],[defect_Item_ID]) VALUES" &
+					 "('" & var_ticketNo & "','" & var_lineNo1 & "','" & var_shiftNo & "','" & "LL" & "','" & result_serialNos.Rows(i)("Serial No.").ToString.Trim & "','" &
+					 result_serialNos.Rows(i)("Product No.").ToString.Trim & "','" & result_serialNos.Rows(i)("Settsu No.").ToString.Trim & "','" & result_serialNos.Rows(i)("Lot No.").ToString.Trim & "','" & "RECHECK" & "',GETDATE()," &
+					 "'" & LblSelectedDefect.Text & "','" & txtlocationOfDefects.Text & "'," &
+					 "'" & stringContributor & "','" & cboprocess.Text & "',GETDATE(),'" & lbldefectNoticedBy.Text & "',HOST_NAME()," &
+					 "'" & tmp_MHSelected & "','" & tmp_reCrimping & "','" & tmp_sonoSolder & "','" & passmark_altered & "','" & strPrint & "','" & lblticketLineNo.Text & "','" & DefectItemID & "')", dbTicketing)
+
+				If cbalterV1.Checked Then
+					SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(result_serialNos.Rows(i)("Serial No.").ToString.Trim, 1, 11) & "' AND [Work_Process] = 'V1'")
+				End If
+				If cbalterV2.Checked Then
+					SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(result_serialNos.Rows(i)("Serial No.").ToString.Trim, 1, 11) & "' AND [Work_Process] = 'V2'")
+				End If
+				If cbalterV3.Checked Then
+					SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(result_serialNos.Rows(i)("Serial No.").ToString.Trim, 1, 11) & "' AND [Work_Process] = 'V3'")
+				End If
+				If cbalterSPI1.Checked = True Then
+					SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(result_serialNos.Rows(i)("Serial No.").ToString.Trim, 1, 11) & "' AND [Work_Process] = 'SPI1'")
+				End If
+				If cbalterSPI2.Checked = True Then
+					SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(result_serialNos.Rows(i)("Serial No.").ToString.Trim, 1, 11) & "' AND [Work_Process] = 'SPI2'")
+				End If
+
+				If cbalterFC.Checked = True Then
+					SaveQuery("UPDATE [inspection_result] SET [Ticket_No] = '" & var_ticketNo & "' WHERE [Ticket_No] = '-' AND [Product_Label_No] = '" & Mid(result_serialNos.Rows(i)("Serial No.").ToString.Trim, 1, 11) & "' AND [Work_Process] = 'FC'")
+				End If
+				'End If
+				Application.DoEvents()
+			Next
+
+			result_serialNos.Rows.Clear()
+
+			view_serialNos.Items.Clear()
+
+			txtserialNo.Clear() : txtserialNo.Focus()
+		End If
+	End Sub
+	Private Sub defectRegisteredDE(ByRef key As String)
+		If key = "F2" Then
+			boolHold = False
+		Else
+			txtdefectCommittedIdNumber.Clear() : txtotherContributor.Clear()
+			boolHold = True
+		End If
+
+		If validateInput() = True Then
+			Dim passmark_altered As String = String.Empty
+
+			If cbalterBK.Checked = True Then passmark_altered &= "BK,"
+			If cbalterSPP.Checked = True Then passmark_altered &= "SPP,"
+			If cbalterGR.Checked = True Then passmark_altered &= "GROM,"
+			If cbalterCL.Checked = True Then passmark_altered &= "CL,"
+			If cbalterV1.Checked = True Then passmark_altered &= "V1,"
+			If cbalterSPI1.Checked = True Then passmark_altered &= "SPI1,"
+			If cbalterCK.Checked = True Then passmark_altered &= "CKT,"
+			If cbalterRI.Checked = True Then passmark_altered &= "SI,"
+			If cbalterRM.Checked = True Then passmark_altered &= "RM,"
+			If cbalterV2.Checked = True Then passmark_altered &= "V2,"
+			If cbalterSPI2.Checked = True Then passmark_altered &= "SPI2,"
+			If cbalterHB.Checked = True Then passmark_altered &= "HB,"
+			If cbalterBL.Checked = True Then passmark_altered &= "BO,"
+			If cbalterST.Checked = True Then passmark_altered &= "ST,"
+			If cbalterPO.Checked = True Then passmark_altered &= "PR,"
+
+			If passmark_altered.Length >= 1 Then passmark_altered = Mid(passmark_altered, 1, passmark_altered.Length - 1)
+
+			REM *********************************MH1/2/3********************************************
+			Dim tmp_MHSelected As String = "N/A"
+			If rbrepairMH2.Checked Then
+				tmp_MHSelected = "MH2"
+			ElseIf rbrepairMH3.Checked Then
+				tmp_MHSelected = "MH3"
+			Else
+				tmp_MHSelected = "MH1"
+			End If
+
+			Dim tmp_reCrimping As String = "NO"
+			If rbrecrimpingYes.Checked Then tmp_reCrimping = "YES"
+
+			Dim tmp_sonoSolder As String = "NO"
+			If rbsonoSolderYES.Checked = True Then tmp_sonoSolder = "YES"
+
+			If cbalterCK.Checked = True Then
+				var_ticketNo = New issue_ticketNo("R" & lblticketLineNo.Text).issuedTicketNo
+			Else
+				var_ticketNo = New issue_ticketNo(lblticketLineNo.Text).issuedTicketNo
+			End If
+
+			SaveQuery("INSERT INTO [inspection_result]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Caselabel_No],[Case_Qty],[Product_Label_No],[Product_No],[Settsu_No],[Lot_No],[Lot_Size],[Product_Status],[Entry_DT],[Terminal],[Update_Entry],[Worker_Main],[Worker_Support1],[Worker_Support2],[Worker_Support3],[Worker_Support4],[Airbag],[Header Line No.]) " &
+					"VALUES('" & var_ticketNo & "','" & var_lineNo1 & "'," & var_shiftNo & ",'" & cboprocess.Text & "','" & "" & "','" & "" & "','" & Mid(txtserialNo.Text.Trim, 1, 11) & "','" & lblproductNo.Text & "','" & lblsettsuNo.Text & "','" & lbllotNo.Text & "'," & var_lotSize & ",'RECHECK',GETDATE(),'" & My.Computer.Name & "',GETDATE(),'" & lbldefectNoticedBy.Text & "','','','','','','" & lblticketLineNo.Text & "')", dbTicketing)
+
+			Dim stringContributor As String = String.Empty
+
+			If txtdefectCommittedIdNumber.Text.Length = 6 And lbldefectCommittedBy.Text.Length >= 6 Then
+				stringContributor = lbldefectCommittedBy.Text
+			Else
+				stringContributor = txtotherContributor.Text
+			End If
+
+			Dim strPrint As String = "NO"
+			If var_lineNo2 = "SI01" Then strPrint = "YES"
+
+			SaveQuery("INSERT INTO [defect_entry]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Product_Label_No],[Product_No],[Settsu_No],[Lot_No],[Defect_Type],[DT_Entry],[Other_Defects],[Location_Of_Defect]" &
+				 ",[Defect_Committed_By],[Process_Encountered],[Process_Encountered_DT],[Process_Noticed_By],[Terminal],[MH_Selected],[For_Wireprep],[For_Sonobond],[Passmark_Alter],[IsPrinted],[Header Line No.],[Circuit By],[Circuit Date],[Final By],[Final Date],[defect_Item_ID]) VALUES" &
+				 "('" & var_ticketNo & "','" & var_lineNo1 & "','" & var_shiftNo & "','" & "LL" & "','" & Mid(txtserialNo.Text, 1, 11) & "','" &
+				 lblproductNo.Text & "','" & lblsettsuNo.Text & "','" & lbllotNo.Text & "','" & "RECHECK" & "',GETDATE()," &
+				 "'" & LblSelectedDefect.Text & "','" & txtlocationOfDefects.Text & "'," &
+				 "'" & stringContributor & "','" & cboprocess.Text & "',GETDATE(),'" & lbldefectNoticedBy.Text & "',HOST_NAME()," &
+				 "'" & tmp_MHSelected & "','" & tmp_reCrimping & "','" & tmp_sonoSolder & "','" & passmark_altered & "','" & strPrint & "','" & lblticketLineNo.Text & "','-',GETDATE(),'-',GETDATE()),,'" & DefectItemID & "'", dbTicketing)
+
+			If MessageBox.Show("DEFECT SUCCESSFULLY REGISTERED!" & vbNewLine & vbNewLine &
+					 "DO YOU WANT TO ADD ANOTHER DEFECT ON THIS PRODUCT/HARNESS?", "Defect Registered!", MessageBoxButtons.YesNo, MessageBoxIcon.Information) = Windows.Forms.DialogResult.Yes Then
+
+				lblproductNo.Text = String.Empty
+				lblsettsuNo.Text = String.Empty
+				lbllotNo.Text = String.Empty
+
+				lbllineNo.Text = String.Empty
+				lblticketLineNo.Text = String.Empty
+
+				txtserialNo.Clear() : txtserialNo.Focus()
+			Else
+				Dispose()
+			End If
+
+		End If
+	End Sub
+	Private Sub defectRegisteredSM(ByRef key As String)
+		If key = "F2" Then
+			boolHold = False
+		Else
+			txtdefectCommittedIdNumber.Clear()
+			boolHold = True
+		End If
+
+		If validateInput() = True Then
+			Dim passmark_altered As String = String.Empty
+
+			Dim tmp_MHSelected As String = "N/A"
+
+			Dim tmp_reCrimping As String = "NO"
+
+			Dim tmp_sonoSolder As String = "NO"
+
+			var_ticketNo = New issue_ticketNo("S" & lblticketLineNo.Text).issuedTicketNo
+
+			Dim strPrint As String = "NO"
+			If var_lineNo2 = "SI01" Then strPrint = "YES"
+
+			SaveQuery("INSERT INTO [defect_entry]([Ticket_No],[Line_Code],[Shift],[Work_Process],[Product_Label_No]" &
+				 ",[Product_No],[Settsu_No],[Lot_No],[Defect_Type],[DT_Entry],[Other_Defects],[Location_Of_Defect],[Defect_Committed_By],[Process_Encountered],[Process_Encountered_DT],[Process_Noticed_By],[Terminal]" &
+				 ",[MH_Selected],[For_Wireprep],[For_Sonobond],[Passmark_Alter],[IsPrinted],[Header Line No.],[defect_Item_ID]) VALUES" &
+				 "('" & var_ticketNo & "','" & var_lineNo1 & "','" & var_shiftNo & "','" & "LL" & "','" & Mid(txtserialNo.Text, 1, 11) & "','" &
+				 lblproductNo.Text & "','" & lblsettsuNo.Text & "','" & lbllotNo.Text & "','" & "MAINTENANCE" & "',GETDATE()," &
+				 "'" & LblSelectedDefect.Text & "','" & txtlocationOfDefects.Text & "'," &
+				 "'" & lbldefectCommittedBy.Text & "','" & cboprocess.Text & "',GETDATE(),'" & lbldefectNoticedBy.Text & "',HOST_NAME()," &
+				 "'" & tmp_MHSelected & "','" & tmp_reCrimping & "','" & tmp_sonoSolder & "','" & passmark_altered & "','" & strPrint & "','" & lblticketLineNo.Text & "','" & DefectItemID & "')", dbTicketing)
+
+			SaveQuery("INSERT INTO [SampleMaintenanceDB].[dbo].[t_sample_entry] " & vbNewLine &
+				 "([Line No] " & vbNewLine &
+				 ",[Control No] " & vbNewLine &
+				 ",[Product No] " & vbNewLine &
+				 ",[Settsu No] " & vbNewLine &
+				 ",[Lot No] " & vbNewLine &
+				 ",[Serial No.] " & vbNewLine &
+				 ",[Defect Content] " & vbNewLine &
+				 ",[Defect Information] " & vbNewLine &
+				 ",[Requested By] " & vbNewLine &
+				 ",[Granted By]) " & vbNewLine &
+				 "VALUES " & vbNewLine &
+				 "('" & lblticketLineNo.Text & "' " & vbNewLine &
+				 ",'" & var_ticketNo & "' " & vbNewLine &
+				 ",'" & lblproductNo.Text & "' " & vbNewLine &
+				 ",'" & lblsettsuNo.Text & "' " & vbNewLine &
+				 ",'" & lbllotNo.Text & "' " & vbNewLine &
+				 ",'" & Mid(txtserialNo.Text, 1, 11) & "' " & vbNewLine &
+				 ",'" & cmbMotherDef.Text & "' " & vbNewLine &
+				 ",'" & txtlocationOfDefects.Text & "' " & vbNewLine &
+				 ",'" & lbldefectCommittedBy.Text & "' " & vbNewLine &
+				 ",'" & lbldefectNoticedBy.Text & "') " & vbNewLine, dbTicketing)
+
+			Dispose()
+		End If
+	End Sub
+
+	REM DEFECT REFISTERED <<
+
+	Private Sub llblf2_LinkClicked(sender As Object, e As LinkLabelLinkClickedEventArgs) Handles llblf2.LinkClicked
+		If DefectType = "QR" Then
+			'defectRegisteredQR("F2")
+		ElseIf DefectType = "PD" Then
+			'defectRegisteredPD("F2")
+		ElseIf DefectType = "RC" Then
+			'defectRegisteredRC("F2")
+		ElseIf DefectType = "MR" Then
+			'defectRegisteredMR("F2")
+		ElseIf DefectType = "DE" Then
+			'defectRegisteredDE("F2")
+		Else
+			'defectRegisteredSM("F2")
+		End If
+	End Sub
+
+	Private Sub llblf5_LinkClicked(sender As Object, e As LinkLabelLinkClickedEventArgs) Handles llblf5.LinkClicked
+		If DefectType = "QR" Then
+			'defectRegisteredQR("F5")
+		ElseIf DefectType = "PD" Then
+			'defectRegisteredPD("F5")
+		ElseIf DefectType = "RC" Then
+			'defectRegisteredRC("F5")
+		ElseIf DefectType = "MR" Then
+			'defectRegisteredMR("F5")
+		ElseIf DefectType = "DE" Then
+			'defectRegisteredDE("F5")
+		Else
+			'defectRegisteredSM("F5")
+		End If
+	End Sub
+
+	Private Sub llblclose_LinkClicked(sender As Object, e As LinkLabelLinkClickedEventArgs) Handles llblclose.LinkClicked
+		Dispose()
+	End Sub
+
+	Private Sub cboprocess_SelectedIndexChanged(sender As Object, e As EventArgs) Handles cboprocess.SelectedIndexChanged
+		If txtserialNo.Text.Length = 11 And lblproductNo.Text <> String.Empty Then
+			txtlocationOfDefects.SelectAll() : txtlocationOfDefects.Focus()
+		Else
+			txtserialNo.SelectAll() : txtserialNo.Focus()
+		End If
+	End Sub
+
+	Private Sub rbShift1_Click(sender As Object, e As EventArgs) Handles rbShift1.Click, rbShift2.Click
+		If rbShift1.Checked = True Then
+			viewtmsRecord.Items.Clear()
+			Dim employee = New class_tms_line(var_lineNo1, var_lineNo2, var_lineNo3, var_lineNo4, 1)
+			For i = 0 To employee.employees.Rows.Count - 1
+				Dim li = viewtmsRecord.Items.Add(employee.employees.Rows(i)("ID Number").ToString.Trim)
+				li.SubItems.Add(employee.employees.Rows(i)("Employee Name").ToString.Trim)
+			Next
+
+			If var_shiftNo = 0 Then var_shiftNo = 1
+		End If
+
+		If rbShift2.Checked = True Then
+			viewtmsRecord.Items.Clear()
+			Dim employee = New class_tms_line(var_lineNo1, var_lineNo2, var_lineNo3, var_lineNo4, 2)
+			For i = 0 To employee.employees.Rows.Count - 1
+				Dim li = viewtmsRecord.Items.Add(employee.employees.Rows(i)("ID Number").ToString.Trim)
+				li.SubItems.Add(employee.employees.Rows(i)("Employee Name").ToString.Trim)
+			Next
+
+			If var_shiftNo = 0 Then var_shiftNo = 2
+		End If
+	End Sub
+
+	Private Sub viewtmsRecord_DoubleClick(sender As Object, e As EventArgs) Handles viewtmsRecord.DoubleClick
+		If lbldefectCommittedBy.Text <> String.Empty And lbldefectNoticedBy.Text <> String.Empty Then
+			txtdefectCommittedIdNumber.Text = viewtmsRecord.SelectedItems(0).SubItems(0).Text.Trim
+			lbldefectCommittedBy.Text = viewtmsRecord.SelectedItems(0).SubItems(1).Text.Trim
+
+			lbldefectNoticedBy.Text = String.Empty : txtdefectNoticedIdNumber.Clear() : txtdefectNoticedIdNumber.Focus()
+		ElseIf lbldefectCommittedBy.Text = String.Empty Then
+			txtdefectCommittedIdNumber.Text = viewtmsRecord.SelectedItems(0).SubItems(0).Text.Trim
+			lbldefectCommittedBy.Text = viewtmsRecord.SelectedItems(0).SubItems(1).Text.Trim
+
+			txtdefectNoticedIdNumber.SelectAll() : txtdefectNoticedIdNumber.Focus()
+		Else
+			txtdefectNoticedIdNumber.Text = viewtmsRecord.SelectedItems(0).SubItems(0).Text.Trim
+			lbldefectNoticedBy.Text = viewtmsRecord.SelectedItems(0).SubItems(1).Text.Trim
+
+			txtdefectCommittedIdNumber.SelectAll() : txtdefectCommittedIdNumber.Focus()
+		End If
+	End Sub
+
+	Private Sub txtlocationOfDefects_KeyDown(sender As Object, e As KeyEventArgs) Handles txtlocationOfDefects.KeyDown
+		'cboprocess.KeyDown()
+
+		If e.KeyCode = Keys.F2 Then
+			'Call defectRegistered("F2")
+		ElseIf e.KeyCode = Keys.F5 Then
+			'Call defectRegistered("F5")
+		ElseIf e.KeyCode = Keys.Escape Then
+			Dispose()
+		End If
+	End Sub
+
+	Private Sub frm_Defect_Entry_Shown(sender As Object, e As EventArgs) Handles MyBase.Shown
+		For Each ctrl As Control In Me.Controls
+			If TypeOf ctrl Is GroupBox Then
+				' Handle controls inside GroupBox
+				For Each innerCtrl As Control In ctrl.Controls
+					If innerCtrl.Name <> "cmbDefType" Then
+						innerCtrl.Enabled = False
+					End If
+				Next
+			ElseIf ctrl.Name <> "cmbDefType" Then
+				ctrl.Enabled = False
+			End If
+		Next
+		cmbDefType.Enabled = True
+		cmbDefType.DroppedDown = True
+	End Sub
+
+	Private Sub txtdefectCommittedIdNumber_KeyPress(sender As Object, e As KeyPressEventArgs) Handles txtdefectCommittedIdNumber.KeyPress
+		If e.KeyChar <> ControlChars.Back Then e.Handled = ("01234567890".IndexOf(e.KeyChar) = -1)
+	End Sub
+
+	Private Sub txtotherContributor_TextChanged(sender As Object, e As EventArgs) Handles txtotherContributor.TextChanged
+		If txtdefectCommittedIdNumber.Text <> String.Empty Then txtdefectCommittedIdNumber.Clear()
+	End Sub
+
+	Private Sub txtdefectCommittedIdNumber_TextChanged(sender As Object, e As EventArgs) Handles txtdefectCommittedIdNumber.TextChanged
+		If txtotherContributor.Text <> String.Empty Then txtotherContributor.Clear()
+		If lbldefectCommittedBy.Text <> String.Empty Then lbldefectCommittedBy.Text = String.Empty
+	End Sub
+	Private Sub txtdefectCommittedIdNumber_KeyDown(sender As Object, e As KeyEventArgs) Handles txtdefectCommittedIdNumber.KeyDown
+		If e.KeyCode = Keys.Enter Then
+			If txtdefectCommittedIdNumber.Text = String.Empty Then
+				Dim frm = New frm_0_information(New class_tms_line(var_lineNo1, var_lineNo2, var_lineNo3, var_lineNo4, var_shiftNo).employees)
+				frm.ShowDialog()
+
+				txtdefectCommittedIdNumber.Text = var_searchedInformation
+			End If
+			Call getContributor()
+		ElseIf e.KeyCode = Keys.F2 Then
+			'Call defectRegistered("F2")
+		ElseIf e.KeyCode = Keys.F5 Then
+			'Call defectRegistered("F5")
+		ElseIf e.KeyCode = Keys.Escape Then
+			Dispose()
+		End If
+	End Sub
+	Sub getContributor()
+		Dim user = New class_tms(txtdefectCommittedIdNumber.Text)
+
+		If user.Name <> String.Empty Then
+			If boolOJT = True Then
+				txtdefectCommittedIdNumber.Clear()
+				txtotherContributor.Text = "OJT WITH DEFECT" & vbNewLine & user.Name
+			Else
+				lbldefectCommittedBy.Text = user.Name
+			End If
+
+			txtdefectNoticedIdNumber.SelectAll() : txtdefectNoticedIdNumber.Focus()
+		Else
+			lbldefectCommittedBy.Text = String.Empty : txtdefectCommittedIdNumber.SelectAll() : txtdefectCommittedIdNumber.Focus()
+		End If
+	End Sub
+
+	Private Sub txtdefectNoticedIdNumber_KeyDown(sender As Object, e As KeyEventArgs) Handles txtdefectNoticedIdNumber.KeyDown
+		If e.KeyCode = Keys.Enter Then
+			If txtdefectNoticedIdNumber.Text = String.Empty Then
+				Dim frm = New frm_0_information(New class_tms_line(var_lineNo1, var_lineNo2, var_lineNo3, var_lineNo4, var_shiftNo).employees)
+				frm.ShowDialog()
+
+				txtdefectNoticedIdNumber.Text = var_searchedInformation
+			End If
+
+			Call getNoticedBy()
+		ElseIf e.KeyCode = Keys.F2 Then
+			'Call defectRegistered("F2")
+		ElseIf e.KeyCode = Keys.F5 Then
+			'Call defectRegistered("F5")
+		ElseIf e.KeyCode = Keys.Escape Then
+			Dispose()
+		End If
+	End Sub
+	Sub getNoticedBy()
+		Dim user = New class_tms(txtdefectNoticedIdNumber.Text)
+
+		If user.Name <> String.Empty Then
+			lbldefectNoticedBy.Text = user.Name
+
+			txtdefectCommittedIdNumber.SelectAll() : txtdefectCommittedIdNumber.Focus()
+		Else
+			lbldefectNoticedBy.Text = String.Empty : txtdefectNoticedIdNumber.SelectAll() : txtdefectNoticedIdNumber.Focus()
+		End If
+	End Sub
+
+	Private Sub txtverificationCheck_KeyDown(sender As Object, e As KeyEventArgs) Handles txtverificationCheck.KeyDown
+		If e.KeyCode = Keys.Enter And txtverificationCheck.Text.Length >= 11 Then
+			Dim query As String = "SELECT * FROM [assembly_vw_defect_list_summary] WITH(NOLOCK) " & vbNewLine &
+				 "WHERE [Confirmed By] IS NULL AND [Cancel Reason] IS NULL " & vbNewLine &
+				 "AND [Ticket No] = '" & txtverificationCheck.Text & "' AND [Line No] = '" & var_lineNo1 & "' " & vbNewLine
+
+			Dim result = SelectQuery(query, dbTicketing)
+
+			If result.Rows.Count >= 1 Then
+				var_ticketNo = result.Rows(0)("Ticket No").ToString.Trim
+				Dim frm = New frm_3_confirmation(result.Rows(0)("Line No").ToString.Trim)
+				frm.ShowDialog()
+			Else
+				MessageBox.Show("Ticket Already Confirmed.  .   ...", "Already Confirmed.", MessageBoxButtons.OK, MessageBoxIcon.Information)
+			End If
+
+			txtverificationCheck.Clear() : txtverificationCheck.Focus()
+		End If
+	End Sub
+	Private frm As New frm_3_confirmation_list
+	Private Sub btnforConfirmation_Click(sender As Object, e As EventArgs) Handles btnforConfirmation.Click
+		If frm.IsHandleCreated Then
+			frm.Dispose()
+		End If
+
+		frm = New frm_3_confirmation_list
+		frm.Show()
+	End Sub
+	'''''''''''''''''''''''''''''''''''''''''''END BLOCKS
+End Class
